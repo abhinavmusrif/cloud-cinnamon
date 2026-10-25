@@ -39,7 +39,7 @@ your own network, or use your provider's private access mechanism.
 ```bash
 sudo apt-get update
 sudo apt-get install -y git
-git clone https://github.com/Amretra-Dynamics/cloud-cinnamon.git
+git clone https://github.com/abhinavmusrif/cloud-cinnamon.git
 cd cloud-cinnamon
 # Inspect scripts before running them with sudo. Use your existing Linux user:
 sudo bash setup.sh --user "$(id -un)"
@@ -58,7 +58,7 @@ sudo bash linux/activate-rdp.sh --activate
 Connect from Windows using an authenticated SSH host:
 
 ```powershell
-git clone https://github.com/Amretra-Dynamics/cloud-cinnamon.git
+git clone https://github.com/abhinavmusrif/cloud-cinnamon.git
 cd cloud-cinnamon
 # First establish normal SSH access and verify the server's host key:
 ssh your-linux-user@your-cloud-host
