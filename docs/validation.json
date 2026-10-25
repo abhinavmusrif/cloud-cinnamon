@@ -1,0 +1,24 @@
+{
+  "date": "2026-10-26",
+  "target": "Ubuntu 24.04 x86-64",
+  "source": "Fresh checksum-pinned upstream release archives plus reviewed patch",
+  "mode": "Isolated native build and DESTDIR staging; no service activation",
+  "checks": {
+    "repository_tests_windows": 5,
+    "repository_tests_linux": 5,
+    "powershell_scripts_parsed": 3,
+    "bash_syntax": "passed",
+    "patch_zero_fuzz_application": "passed",
+    "reviewed_patched_file_hashes": 4,
+    "xrdp_build_and_make_check": "passed",
+    "xorgxrdp_build_and_make_check": "passed",
+    "png_codec_asan_ubsan": {"passed": 11, "failed": 0},
+    "staged_xrdp_sesman_chansrv_elf": "passed",
+    "existing_rdp_services_after_validation": "active"
+  },
+  "not_certified": [
+    "Fresh provisioning and complete recovery on a new VM",
+    "Interactive login through the generalized Windows launcher",
+    "Other operating system releases, CPU architectures or provider identity systems"
+  ]
+}

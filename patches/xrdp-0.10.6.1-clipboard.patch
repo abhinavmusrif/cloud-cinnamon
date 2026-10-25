@@ -1,0 +1,312 @@
+--- a/sesman/chansrv/clipboard.c
++++ b/sesman/chansrv/clipboard.c
+@@ -174,6 +174,7 @@
+ #include "chansrv_common.h"
+ #include "chansrv_config.h"
+ #include "clipboard.h"
++#include "clipboard_png.h"
+ #include "clipboard_file.h"
+ #include "clipboard_common.h"
+ #include "xcommon.h"
+@@ -205,6 +206,14 @@
+ static Atom g_secondary_atom = 0;      /* SECONDARY */
+ static Atom g_get_time_atom = 0;       /* XRDP_GET_TIME_ATOM */
+ static Atom g_utf8_atom = 0;           /* UTF8_STRING */
++/* Lossless registered Windows PNG support; bounded and cached per selection. */
++static Atom g_image_png_atom = 0;
++static Atom g_text_plain_atom = 0;
++static Atom g_text_plain_utf8_atom = 0;
++static int g_png_format_id = 0;
++static int g_image_request_is_png = 0;
++static unsigned int g_selection_generation = 0;
++static unsigned int g_image_request_generation = 0;
+ static Atom g_image_bmp_atom = 0;      /* image/bmp */
+ static Atom g_file_atom1 = 0;          /* text/uri-list */
+ static Atom g_file_atom2 = 0;          /* x-special/gnome-copied-files */
+@@ -392,6 +401,9 @@
+         g_utf8_atom = XInternAtom(g_display, "UTF8_STRING", False);
+ 
+         g_image_bmp_atom = XInternAtom(g_display, "image/bmp", False);
++        g_image_png_atom = XInternAtom(g_display, "image/png", False);
++        g_text_plain_atom = XInternAtom(g_display, "text/plain", False);
++        g_text_plain_utf8_atom = XInternAtom(g_display, "text/plain;charset=utf-8", False);
+         g_file_atom1 = XInternAtom(g_display, "text/uri-list", False);
+         g_file_atom2 = XInternAtom(g_display, "x-special/gnome-copied-files", False);
+         g_incr_atom = XInternAtom(g_display, "INCR", False);
+@@ -935,6 +947,16 @@
+ /* sent by client or server when its local system clipboard is
+    updated with new clipboard data; contains Clipboard Format ID
+    and name pairs of new Clipboard Formats on the clipboard. */
++static void
++clipboard_claim_stable_image(void *generation)
++{
++    if (g_clip_up && (unsigned int)(tbus)generation == g_selection_generation &&
++            !g_clip_c2s.incr_in_progress && !g_clip_s2c.incr_in_progress)
++    {
++        clipboard_set_selection_owner();
++    }
++}
++
+ static int
+ clipboard_process_format_announce(struct stream *s, int clip_msg_status,
+                                   int clip_msg_len)
+@@ -953,6 +975,8 @@
+ 
+     desc[0] = 0;
+     g_num_formatIds = 0;
++    g_png_format_id = 0;
++    ++g_selection_generation;
+     while (clip_msg_len > 3)
+     {
+         in_uint32_le(s, formatId);
+@@ -986,6 +1010,10 @@
+ 
+         /* format id for file copy copy is dynamic and announced by the
+          * client */
++        if (g_strcmp(desc, "PNG") == 0)
++        {
++            g_png_format_id = formatId;
++        }
+         if (g_strcmp(desc, "FileGroupDescriptorW") == 0)
+         {
+             g_file_group_descriptor_format_id = formatId;
+@@ -996,10 +1024,17 @@
+             (g_clip_c2s.incr_in_progress == 0) && /* don't interrupt incr */
+             (g_clip_s2c.incr_in_progress == 0))
+     {
+-        if (clipboard_set_selection_owner() != 0)
+-        {
+-            LOG_DEVEL(LOG_LEVEL_ERROR, "clipboard_process_format_announce: "
+-                      "XSetSelectionOwner failed");
++        /* Windows publishes bitmap first. Let its lossless PNG representation
++         * arrive before desktop clipboard managers request the 8+ MB DIB.
++         * Clients without PNG still get the ordinary bitmap fallback. */
++        if (g_png_format_id == 0 && clipboard_find_format_id(CF_DIB) >= 0)
++        {
++            add_timeout(1200, clipboard_claim_stable_image,
++                        (void *)(tbus)g_selection_generation);
++        }
++        else
++        {
++            clipboard_set_selection_owner();
+         }
+     }
+ 
+@@ -1134,10 +1169,56 @@
+     LOG_DEVEL(LOG_LEVEL_DEBUG, "clipboard_process_data_response_for_image: "
+               "CLIPRDR_DATA_RESPONSE_FOR_IMAGE");
+     lxev = &g_saved_selection_req_event;
+-    len = (int)(s->end - s->p);
+-    if (len < 1)
+-    {
+-        return 0;
++    len = clip_msg_len;
++    if (len < 0 || len > (int)(s->end - s->p) ||
++            g_image_request_generation != g_selection_generation)
++    {
++        return clipboard_refuse_selection(lxev);
++    }
++    if (g_image_request_is_png && g_clip_c2s.type == g_image_bmp_atom)
++    {
++        unsigned char *bmp = NULL;
++        size_t bytes = 0;
++        if (!megas_png_to_bmp(s->p, (size_t)len, &bmp, &bytes))
++        {
++            return clipboard_refuse_selection(lxev);
++        }
++        g_free(g_clip_c2s.data);
++        g_clip_c2s.data = (char *)g_malloc((int)bytes, 0);
++        if (g_clip_c2s.data == NULL)
++        {
++            free(bmp);g_clip_c2s.total_bytes=0;
++            return clipboard_refuse_selection(lxev);
++        }
++        g_memcpy(g_clip_c2s.data,bmp,bytes);free(bmp);
++        g_clip_c2s.total_bytes=(int)bytes;
++        g_clip_c2s.read_bytes_done=(int)bytes;
++        g_clip_c2s.converted=1;
++        return clipboard_provide_selection_c2s(lxev,lxev->target);
++    }
++    if (g_clip_c2s.type == g_image_png_atom)
++    {
++        if (len < 8 || len > 64 * 1024 * 1024 ||
++                g_memcmp(s->p, "\211PNG\r\n\032\n", 8) != 0)
++        {
++            return clipboard_refuse_selection(lxev);
++        }
++        g_free(g_clip_c2s.data);
++        g_clip_c2s.data = (char *)g_malloc(len, 0);
++        if (g_clip_c2s.data == 0)
++        {
++            g_clip_c2s.total_bytes = 0;
++            return clipboard_refuse_selection(lxev);
++        }
++        in_uint8a(s, g_clip_c2s.data, len);
++        g_clip_c2s.total_bytes = len;
++        g_clip_c2s.read_bytes_done = len;
++        g_clip_c2s.converted = 1;
++        return clipboard_provide_selection_c2s(lxev, lxev->target);
++    }
++    if (len < BMPINFOHEADER_LEN || len > 64 * 1024 * 1024)
++    {
++        return clipboard_refuse_selection(lxev);
+     }
+     if (g_clip_c2s.type != g_image_bmp_atom)
+     {
+@@ -2077,7 +2158,7 @@
+ clipboard_event_selection_request(XEvent *xevent)
+ {
+     XSelectionRequestEvent *lxev;
+-    Atom atom_buf[10];
++    Atom atom_buf[16];
+     Atom type;
+     int atom_count;
+     int fmt;
+@@ -2086,6 +2167,14 @@
+     char *xdata;
+ 
+     lxev = (XSelectionRequestEvent *)xevent;
++    /* Never overwrite the single outstanding request or active INCR receiver.
++     * Answer unsupported/concurrent requests explicitly instead of leaving X
++     * clients blocked waiting for an event addressed to a different requestor. */
++    if ((g_clip_c2s.in_request || g_clip_c2s.incr_in_progress) &&
++            lxev->target != g_targets_atom && lxev->target != g_timestamp_atom)
++    {
++        return clipboard_refuse_selection(lxev);
++    }
+     LOG_DEVEL(LOG_LEVEL_DEBUG, "clipboard_event_selection_request: 0x%lx", lxev->property);
+     LOG_DEVEL(LOG_LEVEL_DEBUG, "clipboard_event_selection_request: g_wnd %ld, "
+               ".requestor %ld .owner %ld .selection %ld '%s' .target %ld .property %ld",
+@@ -2122,7 +2211,14 @@
+                 atom_count++;
+                 atom_buf[atom_count] = g_utf8_atom;
+                 atom_count++;
+-            }
++                atom_buf[atom_count++] = g_text_plain_atom;
++                atom_buf[atom_count++] = g_text_plain_utf8_atom;
++            }
++        }
++        if (g_png_format_id > 0 &&
++                (g_cfg->restrict_inbound_clipboard & CLIP_RESTRICT_IMAGE) == 0)
++        {
++            atom_buf[atom_count++] = g_image_png_atom;
+         }
+         if (clipboard_find_format_id(CF_DIB) >= 0 &&
+                 (g_cfg->restrict_inbound_clipboard & CLIP_RESTRICT_IMAGE) == 0)
+@@ -2173,8 +2269,17 @@
+             g_free(xdata);
+         }
+     }
+-    else if ((lxev->target == XA_STRING) || (lxev->target == g_utf8_atom))
+-    {
++    else if (lxev->target == XA_STRING || lxev->target == g_utf8_atom ||
++             lxev->target == g_text_plain_atom || lxev->target == g_text_plain_utf8_atom)
++    {
++        if (clipboard_find_format_id(CF_UNICODETEXT) < 0 &&
++                clipboard_find_format_id(CF_TEXT) < 0 &&
++                clipboard_find_format_id(CF_OEMTEXT) < 0 &&
++                clipboard_find_format_id(g_file_group_descriptor_format_id) < 0)
++        {
++            return clipboard_refuse_selection(lxev);
++        }
++
+         if (clipboard_find_format_id(g_file_group_descriptor_format_id) >= 0)
+         {
+             LOG_DEVEL(LOG_LEVEL_DEBUG, "clipboard_event_selection_request: "
+@@ -2222,6 +2327,25 @@
+         }
+         return 0;
+     }
++    else if (lxev->target == g_image_png_atom)
++    {
++        if ((g_cfg->restrict_inbound_clipboard & CLIP_RESTRICT_IMAGE) ||
++                g_png_format_id <= 0)
++        {
++            return clipboard_refuse_selection(lxev);
++        }
++        if (g_clip_c2s.type == lxev->target && g_clip_c2s.converted)
++        {
++            return clipboard_provide_selection_c2s(lxev, lxev->target);
++        }
++        g_memcpy(&g_saved_selection_req_event, lxev, sizeof(g_saved_selection_req_event));
++        g_clip_c2s.type = g_image_png_atom;
++        g_clip_c2s.xrdp_clip_type = XRDP_CB_BITMAP;
++        g_image_request_generation=g_selection_generation;
++        g_image_request_is_png=1;
++        clipboard_send_data_request(g_png_format_id);
++        return 0;
++    }
+     else if (lxev->target == g_image_bmp_atom)
+     {
+         LOG_DEVEL(LOG_LEVEL_DEBUG, "clipboard_event_selection_request: image/bmp");
+@@ -2255,7 +2379,9 @@
+                      sizeof(g_saved_selection_req_event));
+             g_clip_c2s.type = g_image_bmp_atom;
+             g_clip_c2s.xrdp_clip_type = XRDP_CB_BITMAP;
+-            clipboard_send_data_request(CF_DIB);
++            g_image_request_generation=g_selection_generation;
++            g_image_request_is_png=(g_png_format_id > 0);
++            clipboard_send_data_request(g_png_format_id > 0 ? g_png_format_id : CF_DIB);
+         }
+         return 0;
+ 
+--- a/sesman/chansrv/clipboard_png.h
++++ b/sesman/chansrv/clipboard_png.h
+@@ -0,0 +1,36 @@
++#ifndef MEGAS_CLIPBOARD_PNG_H
++#define MEGAS_CLIPBOARD_PNG_H
++#include <png.h>
++#include <stdint.h>
++#include <stdlib.h>
++#include <string.h>
++static void megas_put32(unsigned char *p, uint32_t n)
++{ p[0]=n; p[1]=n>>8; p[2]=n>>16; p[3]=n>>24; }
++/* Decode bounded PNG to a top-down 24-bit BMP for legacy X clipboard clients. */
++static int megas_png_to_bmp(const void *data, size_t size,
++                            unsigned char **output, size_t *output_size)
++{
++    png_image image;
++    size_t stride, total;
++    unsigned char *bmp;
++    *output = NULL; *output_size = 0;
++    if (size < 8 || size > 64u*1024u*1024u) return 0;
++    memset(&image,0,sizeof(image)); image.version=PNG_IMAGE_VERSION;
++    if (!png_image_begin_read_from_memory(&image,data,size)) return 0;
++    if (!image.width || !image.height || image.width>16384 || image.height>16384)
++    { png_image_free(&image); return 0; }
++    stride=((size_t)image.width*3u+3u)&~(size_t)3u;
++    total=54u+stride*image.height;
++    if (total>64u*1024u*1024u) { png_image_free(&image); return 0; }
++    bmp=(unsigned char *)calloc(1,total);
++    if (!bmp) { png_image_free(&image); return 0; }
++    bmp[0]='B';bmp[1]='M';megas_put32(bmp+2,(uint32_t)total);
++    megas_put32(bmp+10,54);megas_put32(bmp+14,40);
++    megas_put32(bmp+18,image.width);megas_put32(bmp+22,(uint32_t)(-(int32_t)image.height));
++    bmp[26]=1;bmp[28]=24;megas_put32(bmp+34,(uint32_t)(stride*image.height));
++    image.format=PNG_FORMAT_BGR;
++    if (!png_image_finish_read(&image,NULL,bmp+54,(png_int_32)stride,NULL))
++    { png_image_free(&image);free(bmp);return 0; }
++    png_image_free(&image);*output=bmp;*output_size=total;return 1;
++}
++#endif
+--- a/sesman/chansrv/Makefile.am
++++ b/sesman/chansrv/Makefile.am
+@@ -94,4 +94,6 @@
+   $(top_builddir)/sesman/libsesman/libsesman.la \
+   $(top_builddir)/libipm/libipm.la \
+   $(X_PRE_LIBS) -lXfixes -lXrandr -lX11 $(X_EXTRA_LIBS) \
+-  $(CHANSRV_EXTRA_LIBS)
++  $(CHANSRV_EXTRA_LIBS) $(CLIPPNG_LIBS)
++
++AM_CPPFLAGS += $(CLIPPNG_CFLAGS)
+--- a/configure.ac
++++ b/configure.ac
+@@ -265,6 +265,8 @@
+                 [AC_DEFINE([HAVE__PAM_TYPES_H], 1, [Using Linux-PAM], [])])
+ AC_CHECK_HEADER([security/pam_constants.h],
+                 [AC_DEFINE([HAVE_PAM_CONSTANTS_H], 1, [Using OpenPAM], [])])
++
++PKG_CHECK_MODULES([CLIPPNG], [libpng >= 1.6])
+ 
+ # Find imlib2
+ case "$with_imlib2" in

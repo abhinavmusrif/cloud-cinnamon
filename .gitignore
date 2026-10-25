@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.cache/
+build/
+backups/
+private/
+*.log
+*.pid
+*.rdp
+!windows/desktop.rdp.example
+*.pem
+*.key
+*.pfx
+*.sqlite*
+*.db
+.env*
+!config/example.env

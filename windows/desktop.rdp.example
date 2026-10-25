@@ -1,0 +1,23 @@
+screen mode id:i:2
+desktopwidth:i:1920
+desktopheight:i:1080
+session bpp:i:32
+full address:s:127.0.0.1:50001
+prompt for credentials:i:1
+authentication level:i:2
+enablecredsspsupport:i:1
+redirectclipboard:i:1
+keyboardhook:i:0
+compression:i:1
+networkautodetect:i:1
+bandwidthautodetect:i:1
+connection type:i:7
+autoreconnection enabled:i:1
+allow font smoothing:i:1
+allow desktop composition:i:1
+redirectprinters:i:0
+redirectsmartcards:i:0
+redirectwebauthn:i:0
+redirectcomports:i:0
+redirectposdevices:i:0
+drivestoredirect:s:

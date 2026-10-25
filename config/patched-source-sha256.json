@@ -1,0 +1,6 @@
+{
+  "sesman/chansrv/clipboard.c": "7ad10a124293a4fc7e20baa79568a0d9914254d68fd377e18d9fc4af9f83a721",
+  "sesman/chansrv/clipboard_png.h": "2b63d58857333e6087f2985e0145bc0d65a2109028ac1a536c07ca6e4e109eab",
+  "sesman/chansrv/Makefile.am": "11c402f00791a46049f5f0e1a4c7f884cec7059d53aff33ca22eae7866e368be",
+  "configure.ac": "b224d3ccea2c77f00846e19fc94c7a09121c54c96277386312a9f39cd0ff5c5c"
+}
