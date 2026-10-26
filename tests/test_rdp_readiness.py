@@ -33,4 +33,3 @@ class RdpReadinessTests(unittest.TestCase):
  def test_silent_listener_rejected(self):self.assertEqual(self.probe('timeout'),'False')
  def test_closed_listener_rejected(self):self.assertEqual(self.probe('closed'),'False')
 if __name__=='__main__':unittest.main()
-
