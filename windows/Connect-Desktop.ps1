@@ -1,4 +1,4 @@
-param(
+﻿param(
  [ValidateSet('SSH','SSM','ExistingTunnel')][string]$Transport='SSH',
  [ValidatePattern('^[a-zA-Z0-9_.@-]+$')][string]$SshHost,
  [ValidatePattern('^[a-zA-Z0-9_.-]+$')][string]$AwsProfile,
@@ -8,6 +8,7 @@ param(
  [switch]$EnableTextHistory
 )
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'Test-RdpEndpoint.ps1')
 $state=Join-Path $env:LOCALAPPDATA 'CloudCinnamon'
 New-Item -ItemType Directory -Path $state -Force | Out-Null
 $tunnel=$null
@@ -32,10 +33,10 @@ try {
  $ready=$false
  for($i=0;$i -lt 60;$i++) {
   if($tunnel -and $tunnel.HasExited){throw 'Tunnel exited; inspect the local tunnel-error.log. No credential values are printed.'}
-  if(Get-NetTCPConnection -LocalPort $LocalPort -State Listen -ErrorAction SilentlyContinue){$ready=$true;break}
+  if(Test-RdpEndpoint -Port $LocalPort){$ready=$true;break}
   Start-Sleep -Milliseconds 500
  }
- if(-not $ready){throw 'Tunnel did not open within 30 seconds.'}
+ if(-not $ready){throw 'Tunnel did not return a valid RDP TLS negotiation response before the readiness deadline.'}
  # Bind RDP to loopback. Certificate warnings remain visible for human review.
  $rdp=Join-Path $state 'desktop.rdp'
  (Get-Content (Join-Path $PSScriptRoot 'desktop.rdp.example') -Raw).Replace('127.0.0.1:50001',"127.0.0.1:$LocalPort") | Set-Content -LiteralPath $rdp -Encoding ascii

@@ -82,3 +82,23 @@ configuration, all office applications or every Windows version.
 
 Nothing in this repository claims a hardware GPU, universally instant RDP,
 unlimited agents, automatic application logins or recovery of unbacked-up data.
+
+### RDP tunnel readiness
+
+`windows/Connect-Desktop.ps1` waits for a valid RDP negotiation response selecting
+TLS before opening the desktop client. A TCP listener by itself is insufficient.
+The probe uses loopback only, bounded connection/read timeouts, and never sends
+credentials or starts a desktop session. It does not validate the server's TLS
+certificate or authenticate a user; the normal RDP client retains those steps.
+
+On Windows, run the six protocol regression checks:
+
+```powershell
+python -m unittest discover -s tests -p test_rdp_readiness.py -v
+```
+
+These cover successful and fragmented responses, protocol mismatch, explicit
+RDP failure, silent sockets, and immediate connection closure. They do not
+certify reboot recovery. For your own tunnel supervisor, configure sign-in
+startup, failure restart, a single-instance guard and repeated protocol probes;
+verify an actual reboot separately before claiming before-sign-in availability.
