@@ -96,3 +96,45 @@ default users and provider agents may depend on them. Before optional cleanup:
 
 Deleting a user is not required to recover this desktop. Never make it a silent
 side effect of installation.
+
+## Orphaned desktops and hidden applications
+
+A display number such as `:10` or `:11` identifies an Xorg desktop, not a second
+server. `loginctl list-sessions` and `loginctl show-session SESSION -p Display -p State`
+can reveal an old closing desktop and a newer active one under the same account.
+If an old session's `xrdp-sesexec` manager has gone away while Xorg and GUI apps
+remain, reconnecting cannot simply select that old desktop. Single-instance
+application locks can keep sending new launches to those old windows.
+
+1. Preserve current work. Keep SSH/provider-console access available. Do not
+   restart RDP to diagnose a live desktop.
+2. Compare `systemctl show xrdp-sesman -p ExecMainStartTimestamp` with the old
+   session's start and `/var/log/apt/history.log`. Ubuntu 24.04 shared-library
+   updates can trigger automatic `needrestart` service restarts. An update and
+   daemon restart at matching times support this diagnosis; inspect privileged
+   logs to confirm it when available.
+3. Apply `sudo python3 linux/session_safety.py --apply`. Check it with
+   `python3 linux/session_safety.py --check`. This is safe while connected and
+   adds no restart, logout, network or authentication changes.
+4. For configuration-only changes, prefer `sudo systemctl reload xrdp-sesman`
+   after reviewing the settings. A binary/library upgrade still needs a planned
+   logged-out restart; a configuration reload does not activate new binaries.
+5. Recover an affected GUI app individually: identify its actual process and
+   X11 connection, close it gracefully, and relaunch it in the current desktop
+   using the same application profile. Browser session restoration can recover
+   saved tabs, but unsaved form/editor state is not guaranteed. Never blindly
+   kill every user process or remove singleton locks from a live profile.
+6. Retire the old orphan only after its applications/jobs have been reviewed
+   and work saved. Existing orphans are not automatically terminated by this kit.
+
+The safeguard backs up earlier versions of its two managed files under
+`/var/lib/cloud-cinnamon/session-safety/` with a manifest identifying previously
+absent files. To undo it, restore earlier file contents from the chosen backup
+(or remove only files the manifest marks previously absent), then run
+`sudo systemctl daemon-reload`. Do not remove other needrestart/systemd policies.
+This changes future restart selection; existing RDP processes need no restart.
+
+Upstream references:
+[Ubuntu service restarts](https://ubuntu.com/server/docs/how-to/software/automatic-updates/#service-restarts),
+[xrdp session management](https://github.com/neutrinolabs/xrdp/wiki/SessionManagementArchitecture),
+[xrdp 0.10.6.1 reload unit](https://github.com/neutrinolabs/xrdp/blob/v0.10.6.1/instfiles/xrdp-sesman.service.in).

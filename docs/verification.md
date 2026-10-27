@@ -102,3 +102,41 @@ RDP failure, silent sockets, and immediate connection closure. They do not
 certify reboot recovery. For your own tunnel supervisor, configure sign-in
 startup, failure restart, a single-instance guard and repeated protocol probes;
 verify an actual reboot separately before claiming before-sign-in availability.
+
+### Update-time session safety — 2026-10-27
+
+The isolated session-safety tests exercise actual Perl policy matching, retaining
+existing exclusions, unrelated-service behavior, idempotence, prior-file backup,
+symlink refusal and rollback after a failed systemd metadata reload. They never
+restart a live RDP service. Run:
+
+```bash
+python3 -m unittest discover -s tests -p test_session_safety.py -v
+```
+
+Use `session_safety.py --check` to inspect installed managed files. The apply
+command needs root and only invokes `systemctl daemon-reload`; it cannot certify
+an interactive disconnect/reconnect cycle. After applying it on a live host,
+verify unchanged daemon PIDs and session IDs, then perform a normal client
+**disconnect/reconnect** and verify the same desktop. Avoid deliberately
+restarting sesman during unsaved work to reproduce this bug.
+
+This is not crash-proof session persistence, automatic orphan recovery, or a
+replacement for logged-out maintenance after RDP binary/security updates.
+
+Live follow-up on Ubuntu 24.04 x86-64 passed after applying the safeguard:
+managed-file checks matched, the effective Perl configuration excluded both RDP
+services while retaining existing exclusions, and `CanReload=yes` was exposed
+for sesman. The RDP daemon PIDs, desktop session identity and session leader
+remained unchanged. The user disconnected/reconnected their actual RDP client
+and confirmed that the same desktop and open applications returned. This verifies
+one live reconnect after this configuration change, not recovery from a future
+sesman crash or a guarantee against all causes of duplicate sessions.
+
+The five repository checks and five session-safety checks passed. Six Windows
+readiness tests were skipped on this Linux host because Windows PowerShell was
+unavailable. Bash syntax, Python compilation and the installed merged systemd
+unit passed validation. Native RDP/clipboard source did not change and was not
+rebuilt for this configuration-only follow-up. The standalone native codec
+harness takes explicit arguments and is not a unittest-discovery module; run
+its documented command separately when native clipboard code changes.

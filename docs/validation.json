@@ -12,7 +12,10 @@
     "reviewed_patched_file_hashes": 4,
     "xrdp_build_and_make_check": "passed",
     "xorgxrdp_build_and_make_check": "passed",
-    "png_codec_asan_ubsan": {"passed": 11, "failed": 0},
+    "png_codec_asan_ubsan": {
+      "passed": 11,
+      "failed": 0
+    },
     "staged_xrdp_sesman_chansrv_elf": "passed",
     "existing_rdp_services_after_validation": "active"
   },
@@ -20,5 +23,25 @@
     "Fresh provisioning and complete recovery on a new VM",
     "Interactive login through the generalized Windows launcher",
     "Other operating system releases, CPU architectures or provider identity systems"
-  ]
+  ],
+  "session_safety_followup": {
+    "date": "2026-10-27",
+    "scope": "Configuration-only safeguard; no native source or clipboard codec changes",
+    "checks": {
+      "repository_tests_linux": 5,
+      "session_safety_tests_linux": 5,
+      "windows_readiness_tests_on_linux": "6 skipped; PowerShell unavailable",
+      "real_perl_policy_matching": "passed",
+      "existing_live_needrestart_policy_matching": "passed; both RDP services excluded and existing exclusions retained",
+      "bash_syntax": "passed",
+      "systemd_unit_validation": "passed",
+      "live_managed_files": "verified",
+      "existing_rdp_daemon_pids_and_active_session_preserved": true,
+      "sesman_reload_supported": true,
+      "interactive_client_reconnect": "passed: user confirmed same desktop and open apps; session identity and daemon PIDs remained unchanged"
+    },
+    "automatic_package_updates": "remain enabled",
+    "live_services_restarted_by_patch": false,
+    "existing_orphans_automatically_terminated": false
+  }
 }

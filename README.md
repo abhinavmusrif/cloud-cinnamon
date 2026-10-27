@@ -88,6 +88,40 @@ replacement or forced logout is used for appearance settings. The profile's
 panel layout targets Cinnamon's default panel 1; review custom panel layouts
 before applying it.
 
+## Preserve desktop sessions during updates
+
+The setup installs an RDP-specific update safeguard. Ubuntu 24.04 normally uses
+`needrestart` to restart services after shared-library updates. An unexpected
+RDP session-manager restart can leave old GUI applications alive without a
+reconnectable managed desktop. A later login then creates a fresh desktop, while
+single-instance apps such as browsers keep redirecting clicks to old windows.
+
+For an existing installation, including a reviewed custom xrdp prefix:
+
+```bash
+sudo python3 linux/session_safety.py --apply
+python3 linux/session_safety.py --check
+```
+
+This adds narrowly scoped `needrestart` exclusions for `xrdp.service` and
+`xrdp-sesman.service`, preserving other service policies and automatic package
+updates. It also enables `systemctl reload xrdp-sesman` for configuration changes.
+Applying it reloads systemd metadata only: it never restarts RDP, logs out users,
+kills old desktops, or changes the listener/authentication configuration.
+Previous managed-file contents are backed up privately before changes.
+
+**Maintenance still matters:** updated libraries take effect in RDP after a
+planned restart. Save work and log out of all desktop sessions before restarting
+RDP for security/engine updates. This safeguard does not block manual restarts,
+package maintainer scripts that explicitly restart services, crashes or reboots.
+It does not reattach a desktop whose session manager was already lost.
+
+Close/disconnect the RDP client to preserve a healthy managed desktop; choose
+**Log Out** only when you intend to end that desktop. Use the same Linux user and
+connection profile on reconnect. If duplicate or closing sessions already exist,
+run `bash linux/doctor.sh` and see [session recovery](docs/recovery.md#orphaned-desktops-and-hidden-applications).
+Do not delete browser lock files or user profiles to repair this symptom.
+
 ## Daily use and options
 
 * **Windows + Print Screen:** stays on Windows and saves a screenshot using

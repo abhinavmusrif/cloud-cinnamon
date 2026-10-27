@@ -11,6 +11,7 @@ for unit in xrdp xrdp-sesman; do
     echo 'Another custom RDP installation exists. Review it before activation.' >&2; exit 1
   fi
 done
+python3 "$(dirname "$0")/session_safety.py" --apply
 python3 "$(dirname "$0")/configure_rdp.py"
 test -r /etc/xrdp/cert.pem
 test -r /etc/xrdp/key.pem

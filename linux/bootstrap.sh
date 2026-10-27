@@ -21,6 +21,8 @@ if ! systemctl is-active --quiet xrdp; then
   esac
 fi
 export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
+# Keep future shared-library updates from silently replacing live RDP sessions.
+python3 "$(dirname "$0")/session_safety.py" --apply
 apt-get update
 apt-get install -y --no-remove cinnamon-desktop-environment gnome-terminal \
   xrdp xorgxrdp dbus-x11 x11-xserver-utils xclip openssl \

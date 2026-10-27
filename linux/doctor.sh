@@ -13,3 +13,11 @@ if [[ -f /opt/cloud-cinnamon/rdp-0.10.6.1/build-tested ]]; then
   cat /opt/cloud-cinnamon/rdp-0.10.6.1/source-lock.json
   sha256sum -c /opt/cloud-cinnamon/rdp-0.10.6.1/artifact-sha256.txt
 else printf 'No kit-built RDP stack. Distro or another installation may be active.\n'; fi
+
+printf '\nRDP update/session safeguards\n'
+python3 "$(dirname "$0")/session_safety.py" --check || true
+printf '\nSession displays and lifecycle state\n'
+while read -r session _; do
+  [[ -n $session ]] || continue
+  loginctl show-session "$session" -p Display -p State -p Service 2>/dev/null || true
+done < <(loginctl list-sessions --no-legend 2>/dev/null)
